@@ -1,1 +1,64 @@
-test
+data "azurerm_subnet" "storage_private_endpoint_subnet" {
+
+  for_each             = var.private_storage_account
+  name                 = each.value["storage_private_endpoint_subnet"]
+  virtual_network_name = each.value["storage_virtual_network_name"]
+  resource_group_name  = each.value["storage_virtual_network_resource_group_name"]
+
+}
+data "azurerm_private_dns_zone" "file_private_dns_zone" {
+  
+  for_each            = var.private_storage_account
+  name                = each.value["file_private_dns_zone_name"]
+  resource_group_name = each.value["file_private_dns_zone_resource_group_name"]
+
+}
+
+resource "azurerm_storage_account" "storageaccount" {
+
+  for_each                        = var.private_storage_account
+  name                            = each.value["storageaccount_name"]
+  resource_group_name             = each.value["storageaccount_resource_group_name"]
+  location                        = var.location
+  account_tier                    = each.value["storageaccount_account_tier"]
+  account_replication_type        = each.value["storageaccount_account_replication_type"]
+  min_tls_version                 = each.value["storageaccount_min_tls_version"]
+  public_network_access_enabled   = each.value["storageaccount_public_network_access_enabled"]
+  allow_nested_items_to_be_public = each.value["storageaccount_allow_nested_items_to_be_public"]
+  tags                            = var.tags
+}
+
+resource "azurerm_storage_share" "fileshare" {
+  for_each             = var.private_storage_account
+  name                 = each.value["storageaccout_fileshare_name"]
+  storage_account_name = azurerm_storage_account.storageaccount[each.key].name
+  quota                = 5120
+
+}
+
+resource "azurerm_private_endpoint" "storageaccount_privateendpoint" {
+
+  depends_on = [
+    azurerm_storage_account.storageaccount
+  ]
+  for_each            = var.private_storage_account
+  name                = each.value["storageaccount_privateendpoint_name"]
+  location            = var.location
+  resource_group_name = var.resource_group_name
+  subnet_id           = data.azurerm_subnet.storage_private_endpoint_subnet[each.key].id
+  tags                = var.tags
+
+  private_dns_zone_group {
+    name                 = "storageaccount-private-dns-zone-group"
+    private_dns_zone_ids = [data.azurerm_private_dns_zone.file_private_dns_zone[each.key].id]
+  }
+
+  private_service_connection {
+    name                           = "storageaccount-privateserviceconnection"
+    private_connection_resource_id = azurerm_storage_account.storageaccount[each.key].id
+    subresource_names              = ["file"]
+    is_manual_connection           = false
+  }
+
+}
+
